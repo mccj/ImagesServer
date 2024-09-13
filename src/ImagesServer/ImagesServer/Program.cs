@@ -1,27 +1,46 @@
-using SixLabors.ImageSharp;
+using LogDashboard;
+using LogDashboard.Extensions;
+
+using NLog.Web;
+
 using SixLabors.ImageSharp.Web.Caching;
 using SixLabors.ImageSharp.Web.Commands;
 using SixLabors.ImageSharp.Web.DependencyInjection;
 using SixLabors.ImageSharp.Web.Processors;
 using SixLabors.ImageSharp.Web.Providers;
 
+//var sss = EncryptionDes.Encrypt("dome/sixlabors.imagesharp.web.png");
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration
+    .AddJsonFile("App_Data/appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile($"App_Data/appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    ;
+
+//builder.Services.AddHttpReports().AddHttpTransport();
 
 builder.Services.AddImageSharp()
             .SetRequestParser<QueryCollectionRequestParser>()
-            .Configure<PhysicalFileSystemCacheOptions>(options =>
-            {
-                options.CacheRootPath = null;
-                options.CacheFolder = "is-cache";
-                options.CacheFolderDepth = 8;
-            })
+            .Configure<PhysicalFileSystemCacheOptions>(builder.Configuration.GetSection("PhysicalFileSystemCache")
+            //options =>
+            //{
+            //    options.CacheRootPath = null;
+            //    options.CacheFolder = "is-cache";
+            //    options.CacheFolderDepth = 8;
+            //}
+            )
             .SetCache<PhysicalFileSystemCache>()
             .SetCacheKey<UriRelativeLowerInvariantCacheKey>()
             .SetCacheHash<SHA256CacheHash>()
-            .Configure<PhysicalFileSystemProviderOptions>(options =>
-            {
-                options.ProviderRootPath = null;
-            })
+            //.Configure<PhysicalFileSystemProviderOptions>(builder.Configuration.GetSection("PhysicalFileSystemProvider")
+            .Configure<CustomPhysicalFileSystemProviderOptions>(builder.Configuration.GetSection("PhysicalFileSystemProvider")
+            //options =>
+            //{
+            //  options.ProcessingBehavior = ProcessingBehavior.All;
+            //  options.ProviderRootPath = "E:\\Users\\mccj\\source\\repos\\ThreeLive\\HouseSafety\\src\\WebMvc\\App_Data\\FileUploads";
+            //}
+            )
+            .ClearProviders()
+            .AddProvider<CustomPhysicalFileSystemProvider>()
             .AddProvider<PhysicalFileSystemProvider>()
             .AddProcessor<ResizeWebProcessor>()
             .AddProcessor<FormatWebProcessor>()
@@ -82,6 +101,29 @@ builder.Services.AddImageSharp()
 //.AddProcessor<BackgroundColorWebProcessor>()
 //.AddProcessor<QualityWebProcessor>();
 
+builder.Services.AddCors();
+builder.Services.AddHealthChecks()
+//.AddSqlServer(builder.Configuration["ConnectionStrings:connectionString"]);
+;
+
+builder.Services.AddLogDashboard(opt =>
+{
+    var username = builder.Configuration.GetValue<string>("LogDashboard:UserName");
+    var password = builder.Configuration.GetValue<string>("LogDashboard:PassWord") ?? "";
+    var pathMatch = builder.Configuration.GetValue<string>("LogDashboard:PathMatch");
+    var brand = builder.Configuration.GetValue<string>("LogDashboard:Brand");
+
+    if (!string.IsNullOrWhiteSpace(username))
+        opt.AddAuthorizationFilter(new LogDashboardBasicAuthorizationFilter(username, password));
+    if (!string.IsNullOrWhiteSpace(pathMatch)) opt.PathMatch = pathMatch;
+    if (!string.IsNullOrWhiteSpace(brand)) opt.Brand = brand;
+
+    opt.SetRootPath(System.IO.Path.Combine(AppContext.BaseDirectory + "App_Data", "logs"));
+    opt.CustomLogModel<LogDashboard.Models.RequestTraceLogModel>();
+});
+
+builder.Host.UseNLog();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -96,10 +138,26 @@ else
     app.UseDeveloperExceptionPage();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
+
+app.UseCors(builder => builder
+  //.WithOrigins("*")
+  //.WithMethods("*")
+  //.WithHeaders("*")
+  //.AllowAnyOrigin()
+  .SetIsOriginAllowed(origin => true)
+  .AllowAnyMethod()
+  .AllowAnyHeader()
+  .AllowCredentials()
+//.WithExposedHeaders("content-disposition", "content-type")
+);
 
 app.UseDefaultFiles();
 app.UseImageSharp();
 app.UseStaticFiles();
+
+//app.UseHttpReports();
+app.UseLogDashboard();
+app.UseHealthChecks("/health");
 
 app.Run();
