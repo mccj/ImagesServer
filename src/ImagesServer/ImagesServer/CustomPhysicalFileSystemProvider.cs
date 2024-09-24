@@ -72,6 +72,7 @@ public abstract class CustomFileProviderImageProvider : IImageProvider//FileProv
             }
             return ss;
         }
+        _logger.LogTrace("PathMatch {0}, ÇëÇóÂ·¾¶ {1}", _options.Value.PathMatch, context.Request.Path);
         return false;
     }
 
